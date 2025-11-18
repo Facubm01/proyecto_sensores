@@ -1,0 +1,55 @@
+version: "3.8"
+
+services:
+  # MySQL - Base de datos relacional para datos transaccionales
+  mysql:
+    image: mysql:8.0
+    container_name: sensores_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: sensores_db
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin123
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./config/init_mysql.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - sensores_network
+
+  # MongoDB - Base de datos documental para mediciones y logs
+  mongodb:
+    image: mongo:7.0
+    container_name: sensores_mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: sensores_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - sensores_network
+
+  # Redis - Base de datos en memoria para caché y sesiones
+  redis:
+    image: redis:7.2-alpine
+    container_name: sensores_redis
+    command: redis-server --requirepass redis123
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - sensores_network
+
+volumes:
+  mysql_data:
+  mongodb_data:
+  redis_data:
+
+networks:
+  sensores_network:
+    driver: bridge
