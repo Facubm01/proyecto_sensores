@@ -2,6 +2,10 @@
 -- SCHEMA MYSQL - DATOS TRANSACCIONALES
 -- ============================================
 
+-- Configurar charset UTF-8
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+
 USE sensores_db;
 
 -- Tabla: Usuarios

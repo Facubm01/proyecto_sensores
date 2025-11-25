@@ -94,27 +94,124 @@ class ProcesoMenu:
             pausar()
             return
         
-        # Solicitar parámetros básicos (simplificado)
+        # Solicitar parámetros
+        limpiar_pantalla()
         mostrar_subtitulo(f"Parámetros para: {proceso['nombre']}")
         
         parametros = {}
         
-        # Parámetros comunes según tipo de proceso
-        if 'informe' in proceso['tipo']:
-            parametros['ciudad'] = solicitar_entrada("Ciudad (dejar vacío para todas)", str) or None
-            parametros['pais'] = solicitar_entrada("País (dejar vacío para todos)", str) or None
-            parametros['fecha_inicio'] = solicitar_entrada("Fecha inicio (YYYY-MM-DD)", str)
+        # Parámetros según tipo de proceso
+        if 'informe' in proceso['tipo'] or 'alerta' in proceso['tipo']:
+            # Obtener ubicaciones disponibles
+            from utils.db_manager import db_manager
+            cursor = db_manager.get_mysql_cursor()
+            
+            # Obtener ciudades y países únicos
+            cursor.execute("SELECT DISTINCT ciudad, pais FROM sensores ORDER BY pais, ciudad")
+            ubicaciones = cursor.fetchall()
+            cursor.close()
+            
+            if not ubicaciones:
+                mostrar_error("No hay sensores registrados en el sistema")
+                pausar()
+                return
+            
+            # Agrupar por país
+            paises = {}
+            for ub in ubicaciones:
+                if ub['pais'] not in paises:
+                    paises[ub['pais']] = []
+                paises[ub['pais']].append(ub['ciudad'])
+            
+            # Mostrar ubicaciones disponibles
+            print(f"\n{Fore.CYAN}Ubicaciones con sensores disponibles:{Fore.RESET}\n")
+            for pais in sorted(paises.keys()):
+                print(f"{Fore.YELLOW}{pais}:{Fore.RESET}")
+                for ciudad in sorted(paises[pais]):
+                    print(f"  • {ciudad}")
+                print()
+            
+            # Preguntar tipo de filtro
+            print(f"{Fore.CYAN}Opciones de filtro:{Fore.RESET}")
+            print("  [1] Filtrar por ciudad específica")
+            print("  [2] Filtrar por país completo")
+            print("  [3] Todas las ubicaciones (sin filtro)")
+            
+            opcion_filtro = solicitar_entrada("\nSeleccione opción", int)
+            
+            if opcion_filtro == 1:
+                # Filtrar por ciudad
+                ciudad = solicitar_entrada("Ingrese ciudad (de la lista anterior)", str)
+                
+                # Validar que exista
+                ciudades_validas = [ub['ciudad'] for ub in ubicaciones]
+                if ciudad not in ciudades_validas:
+                    mostrar_error(f"La ciudad '{ciudad}' no tiene sensores registrados")
+                    pausar()
+                    return
+                
+                parametros['ciudad'] = ciudad
+                parametros['pais'] = None
+                
+            elif opcion_filtro == 2:
+                # Filtrar por país
+                pais = solicitar_entrada("Ingrese país (de la lista anterior)", str)
+                
+                # Validar que exista
+                if pais not in paises:
+                    mostrar_error(f"El país '{pais}' no tiene sensores registrados")
+                    pausar()
+                    return
+                
+                parametros['ciudad'] = None
+                parametros['pais'] = pais
+                
+            elif opcion_filtro == 3:
+                # Sin filtro
+                parametros['ciudad'] = None
+                parametros['pais'] = None
+            else:
+                mostrar_error("Opción inválida")
+                pausar()
+                return
+            
+            # Fechas
+            parametros['fecha_inicio'] = solicitar_entrada("\nFecha inicio (YYYY-MM-DD)", str)
             parametros['fecha_fin'] = solicitar_entrada("Fecha fin (YYYY-MM-DD)", str)
-        elif 'alerta' in proceso['tipo']:
-            parametros['ciudad'] = solicitar_entrada("Ciudad", str)
-            parametros['temp_min'] = solicitar_entrada("Temperatura mínima", float)
-            parametros['temp_max'] = solicitar_entrada("Temperatura máxima", float)
-            parametros['fecha_inicio'] = solicitar_entrada("Fecha inicio (YYYY-MM-DD)", str)
-            parametros['fecha_fin'] = solicitar_entrada("Fecha fin (YYYY-MM-DD)", str)
+            
+            # Parámetros adicionales para alertas
+            if 'alerta' in proceso['tipo']:
+                parametros['temp_min'] = solicitar_entrada("Temperatura mínima (°C)", float)
+                parametros['temp_max'] = solicitar_entrada("Temperatura máxima (°C)", float)
+                
         elif 'consulta' in proceso['tipo']:
-            parametros['zona'] = solicitar_entrada("Zona/Ciudad", str)
+            # Para consultas online, mostrar zonas
+            from utils.db_manager import db_manager
+            cursor = db_manager.get_mysql_cursor()
+            cursor.execute("SELECT DISTINCT ciudad FROM sensores ORDER BY ciudad")
+            ciudades = [row['ciudad'] for row in cursor.fetchall()]
+            cursor.close()
+            
+            print(f"\n{Fore.CYAN}Ciudades disponibles:{Fore.RESET}")
+            for ciudad in ciudades:
+                print(f"  • {ciudad}")
+            
+            parametros['zona'] = solicitar_entrada("\nZona/Ciudad (de la lista anterior)", str)
         
-        if confirmar(f"¿Confirmar solicitud? Costo: ${proceso['costo']:.2f}"):
+        # Confirmación
+        print(f"\n{Fore.YELLOW}Resumen de la solicitud:{Fore.RESET}")
+        print(f"  Proceso: {proceso['nombre']}")
+        print(f"  Costo: ${proceso['costo']:.2f}")
+        if parametros.get('ciudad'):
+            print(f"  Ciudad: {parametros['ciudad']}")
+        if parametros.get('pais'):
+            print(f"  País: {parametros['pais']}")
+        if parametros.get('zona'):
+            print(f"  Zona: {parametros['zona']}")
+        if parametros.get('fecha_inicio'):
+            print(f"  Período: {parametros['fecha_inicio']} a {parametros['fecha_fin']}")
+        
+        if confirmar(f"\n¿Confirmar solicitud?"):
             success, mensaje, solicitud_id = ProcesoService.solicitar_proceso(
                 self.user_data['user_id'],
                 proceso_id,
@@ -192,6 +289,129 @@ class ProcesoMenu:
                 for s in solicitudes
             ]
             mostrar_tabla(headers, filas)
+            
+            # Permitir ver detalle de solicitudes completadas
+            if filtro_estado == 'completado' or any(s['estado'] == 'completado' for s in solicitudes):
+                if confirmar("\n¿Desea ver el detalle de alguna solicitud?"):
+                    solicitud_id = solicitar_entrada("ID de la solicitud", int)
+                    if solicitud_id:
+                        self.ver_detalle_solicitud(solicitud_id, solicitudes)
+                        return  # No pausar aquí, pausar después del detalle
+        
+        pausar()
+    
+    def ver_detalle_solicitud(self, solicitud_id, solicitudes):
+        """Muestra el detalle completo de una solicitud con su resultado"""
+        limpiar_pantalla()
+        
+        # Buscar la solicitud
+        solicitud = next((s for s in solicitudes if s['id'] == solicitud_id), None)
+        
+        if not solicitud:
+            mostrar_error("Solicitud no encontrada")
+            pausar()
+            return
+        
+        mostrar_titulo(f"DETALLE DE SOLICITUD #{solicitud_id}")
+        
+        # Información básica
+        print(f"{Fore.CYAN}Proceso:{Fore.RESET} {solicitud['proceso_nombre']}")
+        print(f"{Fore.CYAN}Tipo:{Fore.RESET} {solicitud['proceso_tipo']}")
+        print(f"{Fore.CYAN}Estado:{Fore.RESET} {solicitud['estado']}")
+        print(f"{Fore.CYAN}Fecha solicitud:{Fore.RESET} {solicitud['fecha_solicitud']}")
+        print(f"{Fore.CYAN}Costo:{Fore.RESET} ${solicitud['costo']:.2f}")
+        
+        # Si está completada, mostrar resultado
+        if solicitud['estado'] == 'completado' and 'resultado' in solicitud:
+            print(f"\n{Fore.GREEN}{'='*60}")
+            print(f"RESULTADO DEL PROCESO")
+            print(f"{'='*60}{Fore.RESET}\n")
+            
+            resultado = solicitud['resultado']
+            
+            # Mostrar fecha de ejecución
+            if 'fecha_ejecucion' in solicitud:
+                print(f"{Fore.CYAN}Fecha de ejecución:{Fore.RESET} {solicitud['fecha_ejecucion']}\n")
+            
+            # Mostrar resultado según el tipo
+            if 'temperatura_maxima' in resultado:
+                print(f"🌡️  {Fore.YELLOW}Temperatura Máxima:{Fore.RESET} {resultado['temperatura_maxima']}°C")
+            if 'temperatura_minima' in resultado:
+                print(f"🌡️  {Fore.CYAN}Temperatura Mínima:{Fore.RESET} {resultado['temperatura_minima']}°C")
+            if 'temperatura_promedio' in resultado:
+                print(f"🌡️  {Fore.GREEN}Temperatura Promedio:{Fore.RESET} {resultado['temperatura_promedio']}°C")
+            
+            if 'humedad_maxima' in resultado:
+                print(f"💧 {Fore.YELLOW}Humedad Máxima:{Fore.RESET} {resultado['humedad_maxima']}%")
+            if 'humedad_minima' in resultado:
+                print(f"💧 {Fore.CYAN}Humedad Mínima:{Fore.RESET} {resultado['humedad_minima']}%")
+            if 'humedad_promedio' in resultado:
+                print(f"💧 {Fore.GREEN}Humedad Promedio:{Fore.RESET} {resultado['humedad_promedio']}%")
+            
+            if 'total_mediciones' in resultado:
+                print(f"\n📊 {Fore.MAGENTA}Total de mediciones analizadas:{Fore.RESET} {resultado['total_mediciones']:,}")
+            
+            # Datos mensuales (si existen)
+            if 'datos_mensuales' in resultado:
+                print(f"\n{Fore.YELLOW}Datos Mensuales:{Fore.RESET}")
+                headers = ['Periodo', 'Temp. Promedio', 'Hum. Promedio', 'Mediciones']
+                filas = []
+                for dato in resultado['datos_mensuales'][:12]:  # Máximo 12 meses
+                    filas.append([
+                        dato.get('periodo', 'N/A'),
+                        f"{dato.get('temperatura_promedio', 0):.2f}°C" if 'temperatura_promedio' in dato else 'N/A',
+                        f"{dato.get('humedad_promedio', 0):.2f}%" if 'humedad_promedio' in dato else 'N/A',
+                        dato.get('total_mediciones', 0)
+                    ])
+                mostrar_tabla(headers, filas)
+            
+            # Alertas generadas (si existen)
+            if 'alertas_generadas' in resultado:
+                print(f"\n⚠️  {Fore.RED}Alertas generadas:{Fore.RESET} {resultado['alertas_generadas']}")
+                if 'mediciones_analizadas' in resultado:
+                    print(f"📊 Mediciones analizadas: {resultado['mediciones_analizadas']}")
+            
+            # Sensores (para consulta online)
+            if 'sensores' in resultado:
+                print(f"\n{Fore.YELLOW}Sensores en la zona:{Fore.RESET}")
+                headers = ['ID', 'Nombre', 'Ciudad', 'Temp.', 'Hum.', 'Última Act.']
+                filas = []
+                for sensor in resultado['sensores'][:10]:  # Máximo 10 sensores
+                    filas.append([
+                        sensor.get('sensor_id', 'N/A'),
+                        sensor.get('sensor_nombre', 'N/A')[:20],
+                        sensor.get('ciudad', 'N/A'),
+                        f"{sensor.get('temperatura', 0):.1f}°C",
+                        f"{sensor.get('humedad', 0):.1f}%",
+                        str(sensor.get('ultima_actualizacion', 'N/A'))[:16]
+                    ])
+                mostrar_tabla(headers, filas)
+            
+            # Parámetros usados
+            if 'parametros' in resultado:
+                print(f"\n{Fore.CYAN}Parámetros utilizados:{Fore.RESET}")
+                params = resultado['parametros']
+                if 'ciudad' in params and params['ciudad']:
+                    print(f"  • Ciudad: {params['ciudad']}")
+                if 'pais' in params and params['pais']:
+                    print(f"  • País: {params['pais']}")
+                if 'fecha_inicio' in params:
+                    print(f"  • Fecha inicio: {params['fecha_inicio']}")
+                if 'fecha_fin' in params:
+                    print(f"  • Fecha fin: {params['fecha_fin']}")
+                if 'zona' in params:
+                    print(f"  • Zona: {params['zona']}")
+        
+        elif solicitud['estado'] == 'error':
+            print(f"\n{Fore.RED}❌ El proceso finalizó con error{Fore.RESET}")
+            if 'resultado' in solicitud and 'error' in solicitud['resultado']:
+                print(f"Error: {solicitud['resultado']['error']}")
+        
+        elif solicitud['estado'] == 'pendiente':
+            print(f"\n{Fore.YELLOW}⏳ La solicitud está pendiente de ejecución{Fore.RESET}")
+        
+        elif solicitud['estado'] == 'en_proceso':
+            print(f"\n{Fore.BLUE}⚙️  La solicitud se está procesando actualmente{Fore.RESET}")
         
         pausar()
     

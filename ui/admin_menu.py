@@ -128,10 +128,10 @@ class AdminMenu:
     
     def gestion_usuarios(self):
         """Gestión de usuarios (Admin)"""
-        limpiar_pantalla()
-        mostrar_titulo("GESTIÓN DE USUARIOS")
-        mostrar_info("Funcionalidad en desarrollo...")
-        pausar()
+        from ui.usuario_menu import UsuarioMenu
+        menu = UsuarioMenu(self.user_data)
+        menu.mostrar_menu()
+    
     
     def ver_sesiones_activas(self):
         """Ver sesiones activas (Admin)"""
