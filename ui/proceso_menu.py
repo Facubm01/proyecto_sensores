@@ -192,6 +192,129 @@ class ProcesoMenu:
                 for s in solicitudes
             ]
             mostrar_tabla(headers, filas)
+            
+            # Permitir ver detalle de solicitudes completadas
+            if filtro_estado == 'completado' or any(s['estado'] == 'completado' for s in solicitudes):
+                if confirmar("\n¿Desea ver el detalle de alguna solicitud?"):
+                    solicitud_id = solicitar_entrada("ID de la solicitud", int)
+                    if solicitud_id:
+                        self.ver_detalle_solicitud(solicitud_id, solicitudes)
+                        return  # No pausar aquí, pausar después del detalle
+        
+        pausar()
+    
+    def ver_detalle_solicitud(self, solicitud_id, solicitudes):
+        """Muestra el detalle completo de una solicitud con su resultado"""
+        limpiar_pantalla()
+        
+        # Buscar la solicitud
+        solicitud = next((s for s in solicitudes if s['id'] == solicitud_id), None)
+        
+        if not solicitud:
+            mostrar_error("Solicitud no encontrada")
+            pausar()
+            return
+        
+        mostrar_titulo(f"DETALLE DE SOLICITUD #{solicitud_id}")
+        
+        # Información básica
+        print(f"{Fore.CYAN}Proceso:{Fore.RESET} {solicitud['proceso_nombre']}")
+        print(f"{Fore.CYAN}Tipo:{Fore.RESET} {solicitud['proceso_tipo']}")
+        print(f"{Fore.CYAN}Estado:{Fore.RESET} {solicitud['estado']}")
+        print(f"{Fore.CYAN}Fecha solicitud:{Fore.RESET} {solicitud['fecha_solicitud']}")
+        print(f"{Fore.CYAN}Costo:{Fore.RESET} ${solicitud['costo']:.2f}")
+        
+        # Si está completada, mostrar resultado
+        if solicitud['estado'] == 'completado' and 'resultado' in solicitud:
+            print(f"\n{Fore.GREEN}{'='*60}")
+            print(f"RESULTADO DEL PROCESO")
+            print(f"{'='*60}{Fore.RESET}\n")
+            
+            resultado = solicitud['resultado']
+            
+            # Mostrar fecha de ejecución
+            if 'fecha_ejecucion' in solicitud:
+                print(f"{Fore.CYAN}Fecha de ejecución:{Fore.RESET} {solicitud['fecha_ejecucion']}\n")
+            
+            # Mostrar resultado según el tipo
+            if 'temperatura_maxima' in resultado:
+                print(f"🌡️  {Fore.YELLOW}Temperatura Máxima:{Fore.RESET} {resultado['temperatura_maxima']}°C")
+            if 'temperatura_minima' in resultado:
+                print(f"🌡️  {Fore.CYAN}Temperatura Mínima:{Fore.RESET} {resultado['temperatura_minima']}°C")
+            if 'temperatura_promedio' in resultado:
+                print(f"🌡️  {Fore.GREEN}Temperatura Promedio:{Fore.RESET} {resultado['temperatura_promedio']}°C")
+            
+            if 'humedad_maxima' in resultado:
+                print(f"💧 {Fore.YELLOW}Humedad Máxima:{Fore.RESET} {resultado['humedad_maxima']}%")
+            if 'humedad_minima' in resultado:
+                print(f"💧 {Fore.CYAN}Humedad Mínima:{Fore.RESET} {resultado['humedad_minima']}%")
+            if 'humedad_promedio' in resultado:
+                print(f"💧 {Fore.GREEN}Humedad Promedio:{Fore.RESET} {resultado['humedad_promedio']}%")
+            
+            if 'total_mediciones' in resultado:
+                print(f"\n📊 {Fore.MAGENTA}Total de mediciones analizadas:{Fore.RESET} {resultado['total_mediciones']:,}")
+            
+            # Datos mensuales (si existen)
+            if 'datos_mensuales' in resultado:
+                print(f"\n{Fore.YELLOW}Datos Mensuales:{Fore.RESET}")
+                headers = ['Periodo', 'Temp. Promedio', 'Hum. Promedio', 'Mediciones']
+                filas = []
+                for dato in resultado['datos_mensuales'][:12]:  # Máximo 12 meses
+                    filas.append([
+                        dato.get('periodo', 'N/A'),
+                        f"{dato.get('temperatura_promedio', 0):.2f}°C" if 'temperatura_promedio' in dato else 'N/A',
+                        f"{dato.get('humedad_promedio', 0):.2f}%" if 'humedad_promedio' in dato else 'N/A',
+                        dato.get('total_mediciones', 0)
+                    ])
+                mostrar_tabla(headers, filas)
+            
+            # Alertas generadas (si existen)
+            if 'alertas_generadas' in resultado:
+                print(f"\n⚠️  {Fore.RED}Alertas generadas:{Fore.RESET} {resultado['alertas_generadas']}")
+                if 'mediciones_analizadas' in resultado:
+                    print(f"📊 Mediciones analizadas: {resultado['mediciones_analizadas']}")
+            
+            # Sensores (para consulta online)
+            if 'sensores' in resultado:
+                print(f"\n{Fore.YELLOW}Sensores en la zona:{Fore.RESET}")
+                headers = ['ID', 'Nombre', 'Ciudad', 'Temp.', 'Hum.', 'Última Act.']
+                filas = []
+                for sensor in resultado['sensores'][:10]:  # Máximo 10 sensores
+                    filas.append([
+                        sensor.get('sensor_id', 'N/A'),
+                        sensor.get('sensor_nombre', 'N/A')[:20],
+                        sensor.get('ciudad', 'N/A'),
+                        f"{sensor.get('temperatura', 0):.1f}°C",
+                        f"{sensor.get('humedad', 0):.1f}%",
+                        str(sensor.get('ultima_actualizacion', 'N/A'))[:16]
+                    ])
+                mostrar_tabla(headers, filas)
+            
+            # Parámetros usados
+            if 'parametros' in resultado:
+                print(f"\n{Fore.CYAN}Parámetros utilizados:{Fore.RESET}")
+                params = resultado['parametros']
+                if 'ciudad' in params and params['ciudad']:
+                    print(f"  • Ciudad: {params['ciudad']}")
+                if 'pais' in params and params['pais']:
+                    print(f"  • País: {params['pais']}")
+                if 'fecha_inicio' in params:
+                    print(f"  • Fecha inicio: {params['fecha_inicio']}")
+                if 'fecha_fin' in params:
+                    print(f"  • Fecha fin: {params['fecha_fin']}")
+                if 'zona' in params:
+                    print(f"  • Zona: {params['zona']}")
+        
+        elif solicitud['estado'] == 'error':
+            print(f"\n{Fore.RED}❌ El proceso finalizó con error{Fore.RESET}")
+            if 'resultado' in solicitud and 'error' in solicitud['resultado']:
+                print(f"Error: {solicitud['resultado']['error']}")
+        
+        elif solicitud['estado'] == 'pendiente':
+            print(f"\n{Fore.YELLOW}⏳ La solicitud está pendiente de ejecución{Fore.RESET}")
+        
+        elif solicitud['estado'] == 'en_proceso':
+            print(f"\n{Fore.BLUE}⚙️  La solicitud se está procesando actualmente{Fore.RESET}")
         
         pausar()
     
