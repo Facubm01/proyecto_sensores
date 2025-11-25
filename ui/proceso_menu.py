@@ -94,27 +94,124 @@ class ProcesoMenu:
             pausar()
             return
         
-        # Solicitar parámetros básicos (simplificado)
+        # Solicitar parámetros
+        limpiar_pantalla()
         mostrar_subtitulo(f"Parámetros para: {proceso['nombre']}")
         
         parametros = {}
         
-        # Parámetros comunes según tipo de proceso
-        if 'informe' in proceso['tipo']:
-            parametros['ciudad'] = solicitar_entrada("Ciudad (dejar vacío para todas)", str) or None
-            parametros['pais'] = solicitar_entrada("País (dejar vacío para todos)", str) or None
-            parametros['fecha_inicio'] = solicitar_entrada("Fecha inicio (YYYY-MM-DD)", str)
+        # Parámetros según tipo de proceso
+        if 'informe' in proceso['tipo'] or 'alerta' in proceso['tipo']:
+            # Obtener ubicaciones disponibles
+            from utils.db_manager import db_manager
+            cursor = db_manager.get_mysql_cursor()
+            
+            # Obtener ciudades y países únicos
+            cursor.execute("SELECT DISTINCT ciudad, pais FROM sensores ORDER BY pais, ciudad")
+            ubicaciones = cursor.fetchall()
+            cursor.close()
+            
+            if not ubicaciones:
+                mostrar_error("No hay sensores registrados en el sistema")
+                pausar()
+                return
+            
+            # Agrupar por país
+            paises = {}
+            for ub in ubicaciones:
+                if ub['pais'] not in paises:
+                    paises[ub['pais']] = []
+                paises[ub['pais']].append(ub['ciudad'])
+            
+            # Mostrar ubicaciones disponibles
+            print(f"\n{Fore.CYAN}Ubicaciones con sensores disponibles:{Fore.RESET}\n")
+            for pais in sorted(paises.keys()):
+                print(f"{Fore.YELLOW}{pais}:{Fore.RESET}")
+                for ciudad in sorted(paises[pais]):
+                    print(f"  • {ciudad}")
+                print()
+            
+            # Preguntar tipo de filtro
+            print(f"{Fore.CYAN}Opciones de filtro:{Fore.RESET}")
+            print("  [1] Filtrar por ciudad específica")
+            print("  [2] Filtrar por país completo")
+            print("  [3] Todas las ubicaciones (sin filtro)")
+            
+            opcion_filtro = solicitar_entrada("\nSeleccione opción", int)
+            
+            if opcion_filtro == 1:
+                # Filtrar por ciudad
+                ciudad = solicitar_entrada("Ingrese ciudad (de la lista anterior)", str)
+                
+                # Validar que exista
+                ciudades_validas = [ub['ciudad'] for ub in ubicaciones]
+                if ciudad not in ciudades_validas:
+                    mostrar_error(f"La ciudad '{ciudad}' no tiene sensores registrados")
+                    pausar()
+                    return
+                
+                parametros['ciudad'] = ciudad
+                parametros['pais'] = None
+                
+            elif opcion_filtro == 2:
+                # Filtrar por país
+                pais = solicitar_entrada("Ingrese país (de la lista anterior)", str)
+                
+                # Validar que exista
+                if pais not in paises:
+                    mostrar_error(f"El país '{pais}' no tiene sensores registrados")
+                    pausar()
+                    return
+                
+                parametros['ciudad'] = None
+                parametros['pais'] = pais
+                
+            elif opcion_filtro == 3:
+                # Sin filtro
+                parametros['ciudad'] = None
+                parametros['pais'] = None
+            else:
+                mostrar_error("Opción inválida")
+                pausar()
+                return
+            
+            # Fechas
+            parametros['fecha_inicio'] = solicitar_entrada("\nFecha inicio (YYYY-MM-DD)", str)
             parametros['fecha_fin'] = solicitar_entrada("Fecha fin (YYYY-MM-DD)", str)
-        elif 'alerta' in proceso['tipo']:
-            parametros['ciudad'] = solicitar_entrada("Ciudad", str)
-            parametros['temp_min'] = solicitar_entrada("Temperatura mínima", float)
-            parametros['temp_max'] = solicitar_entrada("Temperatura máxima", float)
-            parametros['fecha_inicio'] = solicitar_entrada("Fecha inicio (YYYY-MM-DD)", str)
-            parametros['fecha_fin'] = solicitar_entrada("Fecha fin (YYYY-MM-DD)", str)
+            
+            # Parámetros adicionales para alertas
+            if 'alerta' in proceso['tipo']:
+                parametros['temp_min'] = solicitar_entrada("Temperatura mínima (°C)", float)
+                parametros['temp_max'] = solicitar_entrada("Temperatura máxima (°C)", float)
+                
         elif 'consulta' in proceso['tipo']:
-            parametros['zona'] = solicitar_entrada("Zona/Ciudad", str)
+            # Para consultas online, mostrar zonas
+            from utils.db_manager import db_manager
+            cursor = db_manager.get_mysql_cursor()
+            cursor.execute("SELECT DISTINCT ciudad FROM sensores ORDER BY ciudad")
+            ciudades = [row['ciudad'] for row in cursor.fetchall()]
+            cursor.close()
+            
+            print(f"\n{Fore.CYAN}Ciudades disponibles:{Fore.RESET}")
+            for ciudad in ciudades:
+                print(f"  • {ciudad}")
+            
+            parametros['zona'] = solicitar_entrada("\nZona/Ciudad (de la lista anterior)", str)
         
-        if confirmar(f"¿Confirmar solicitud? Costo: ${proceso['costo']:.2f}"):
+        # Confirmación
+        print(f"\n{Fore.YELLOW}Resumen de la solicitud:{Fore.RESET}")
+        print(f"  Proceso: {proceso['nombre']}")
+        print(f"  Costo: ${proceso['costo']:.2f}")
+        if parametros.get('ciudad'):
+            print(f"  Ciudad: {parametros['ciudad']}")
+        if parametros.get('pais'):
+            print(f"  País: {parametros['pais']}")
+        if parametros.get('zona'):
+            print(f"  Zona: {parametros['zona']}")
+        if parametros.get('fecha_inicio'):
+            print(f"  Período: {parametros['fecha_inicio']} a {parametros['fecha_fin']}")
+        
+        if confirmar(f"\n¿Confirmar solicitud?"):
             success, mensaje, solicitud_id = ProcesoService.solicitar_proceso(
                 self.user_data['user_id'],
                 proceso_id,
