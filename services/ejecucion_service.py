@@ -6,6 +6,8 @@ Motor que ejecuta los diferentes tipos de reportes y procesos
 from datetime import datetime
 from utils.db_manager import db_manager
 from services.facturacion_service import FacturacionService
+from services.notificacion_service import NotificacionService
+from utils.logger import logger
 import json
 
 class EjecucionService:
@@ -94,12 +96,30 @@ class EjecucionService:
                 WHERE id = %s
             """, (nuevo_estado, solicitud_id))
             
-            # Si completó exitosamente, generar factura
+            # Si completó exitosamente, generar factura y notificar
             if nuevo_estado == 'completado':
                 FacturacionService.generar_factura(
                     solicitud['usuario_id'],
                     [solicitud_id],
                     f"Factura por proceso: {solicitud['nombre']}"
+                )
+                
+                # Enviar notificación al usuario
+                NotificacionService.enviar_notificacion(
+                    solicitud['usuario_id'],
+                    'proceso_completado',
+                    f"Tu proceso '{solicitud['nombre']}' ha sido completado exitosamente",
+                    {'solicitud_id': solicitud_id, 'proceso_nombre': solicitud['nombre']}
+                )
+                
+                logger.info(f"Proceso {solicitud_id} completado para usuario {solicitud['usuario_id']}")
+            elif nuevo_estado == 'error':
+                # Notificar error también
+                NotificacionService.enviar_notificacion(
+                    solicitud['usuario_id'],
+                    'proceso_error',
+                    f"Tu proceso '{solicitud['nombre']}' finalizó con error",
+                    {'solicitud_id': solicitud_id, 'proceso_nombre': solicitud['nombre'], 'error': resultado.get('error', 'Error desconocido')}
                 )
             
             db_manager.commit_mysql()

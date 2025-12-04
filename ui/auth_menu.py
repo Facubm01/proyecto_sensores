@@ -5,6 +5,7 @@ Gestiona login y registro de usuarios
 
 from services.auth_service import AuthService
 from utils.menu import *
+from utils.validaciones import validar_email, validar_password, validar_nombre
 import getpass
 
 
@@ -22,7 +23,7 @@ class AuthMenu:
         limpiar_pantalla()
         mostrar_titulo("INICIO DE SESIÓN")
         
-        email = solicitar_entrada("Email")
+        email = solicitar_entrada("Email", validador=lambda e: validar_email(e))
         if not email:
             return False, None, None
         
@@ -51,21 +52,30 @@ class AuthMenu:
         limpiar_pantalla()
         mostrar_titulo("REGISTRO DE NUEVO USUARIO")
         
-        nombre = solicitar_entrada("Nombre completo")
+        nombre = solicitar_entrada("Nombre completo", validador=lambda n: validar_nombre(n))
         if not nombre:
             return False
         
-        email = solicitar_entrada("Email")
+        email = solicitar_entrada("Email", validador=lambda e: validar_email(e))
         if not email:
             return False
         
-        password = getpass.getpass("Contraseña: ")
-        password_confirm = getpass.getpass("Confirmar contraseña: ")
+        # Validar contraseña
+        while True:
+            password = getpass.getpass("Contraseña: ")
+            es_valida, mensaje = validar_password(password)
+            if not es_valida:
+                mostrar_error(mensaje)
+                continue
+            break
         
-        if password != password_confirm:
-            mostrar_error("Las contraseñas no coinciden")
-            pausar()
-            return False
+        # Confirmar contraseña
+        while True:
+            password_confirm = getpass.getpass("Confirmar contraseña: ")
+            if password != password_confirm:
+                mostrar_error("Las contraseñas no coinciden")
+                continue
+            break
         
         print("\nRegistrando usuario...")
         success, mensaje = AuthService.registrar_usuario(nombre, email, password)

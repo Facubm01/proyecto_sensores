@@ -16,6 +16,10 @@ from ui.sensor_menu import SensorMenu
 from ui.alerta_menu import AlertaMenu
 from ui.control_menu import ControlMenu
 from ui.admin_menu import AdminMenu
+from ui.dashboard_menu import DashboardMenu
+from ui.notificacion_menu import NotificacionMenu
+from services.notificacion_service import NotificacionService
+from utils.logger import logger
 
 
 class SistemaSensores:
@@ -95,6 +99,7 @@ class SistemaSensores:
         if success:
             self.session_id = session_id
             self.user_data = user_data
+            logger.log_operacion("Inicio de sesión", user_data['user_id'])
             self.menu_usuario()
     
     def registrar_usuario(self):
@@ -107,29 +112,35 @@ class SistemaSensores:
             limpiar_pantalla()
             mostrar_usuario_info(self.user_data)
             
+            # Verificar notificaciones
+            notificaciones_no_leidas = NotificacionService.contar_no_leidas(self.user_data['user_id'])
+            notif_texto = f" ({notificaciones_no_leidas} nuevas)" if notificaciones_no_leidas > 0 else ""
+            
             # Opciones base para todos los usuarios
             opciones = [
-                (1, "Gestión de Procesos"),
-                (2, "Ver Mis Solicitudes"),
-                (3, "Facturación y Cuenta Corriente"),
-                (4, "Mensajería"),
+                (1, "Dashboard"),
+                (2, "Gestión de Procesos"),
+                (3, "Ver Mis Solicitudes"),
+                (4, "Facturación y Cuenta Corriente"),
+                (5, f"Mensajería{notif_texto}"),
+                (6, f"Notificaciones{notif_texto}"),
             ]
             
             # Opciones adicionales para técnicos
             if 'tecnico' in self.user_data['roles'] or 'administrador' in self.user_data['roles']:
                 opciones.extend([
-                    (5, "Gestión de Sensores"),
-                    (6, "Ver Alertas"),
-                    (7, "Control de Funcionamiento"),
+                    (7, "Gestión de Sensores"),
+                    (8, "Ver Alertas"),
+                    (9, "Control de Funcionamiento"),
                 ])
             
             # Opciones adicionales para administradores
             if 'administrador' in self.user_data['roles']:
                 opciones.extend([
-                    (8, "Ejecutar Procesos Pendientes"),
-                    (9, "Gestión de Usuarios"),
-                    (10, "Ver Sesiones Activas"),
-                    (11, "Reportes del Sistema"),
+                    (10, "Ejecutar Procesos Pendientes"),
+                    (11, "Gestión de Usuarios"),
+                    (12, "Ver Sesiones Activas"),
+                    (13, "Reportes del Sistema"),
                 ])
             
             opciones.append((99, "Cerrar Sesión"))
@@ -137,36 +148,42 @@ class SistemaSensores:
             seleccion = mostrar_menu("MENÚ PRINCIPAL", opciones, mostrar_salir=False)
             
             if seleccion == '1':
-                menu = ProcesoMenu(self.user_data)
+                menu = DashboardMenu(self.user_data)
                 menu.mostrar_menu()
             elif seleccion == '2':
                 menu = ProcesoMenu(self.user_data)
-                menu.ver_mis_solicitudes()
+                menu.mostrar_menu()
             elif seleccion == '3':
+                menu = ProcesoMenu(self.user_data)
+                menu.ver_mis_solicitudes()
+            elif seleccion == '4':
                 menu = FacturacionMenu(self.user_data)
                 menu.mostrar_menu()
-            elif seleccion == '4':
+            elif seleccion == '5':
                 menu = MensajeriaMenu(self.user_data)
                 menu.mostrar_menu()
-            elif seleccion == '5' and ('tecnico' in self.user_data['roles'] or 'administrador' in self.user_data['roles']):
-                menu = SensorMenu(self.user_data)
-                menu.mostrar_menu()
-            elif seleccion == '6' and ('tecnico' in self.user_data['roles'] or 'administrador' in self.user_data['roles']):
-                menu = AlertaMenu(self.user_data)
+            elif seleccion == '6':
+                menu = NotificacionMenu(self.user_data)
                 menu.mostrar_menu()
             elif seleccion == '7' and ('tecnico' in self.user_data['roles'] or 'administrador' in self.user_data['roles']):
+                menu = SensorMenu(self.user_data)
+                menu.mostrar_menu()
+            elif seleccion == '8' and ('tecnico' in self.user_data['roles'] or 'administrador' in self.user_data['roles']):
+                menu = AlertaMenu(self.user_data)
+                menu.mostrar_menu()
+            elif seleccion == '9' and ('tecnico' in self.user_data['roles'] or 'administrador' in self.user_data['roles']):
                 menu = ControlMenu(self.user_data)
                 menu.mostrar_menu()
-            elif seleccion == '8' and 'administrador' in self.user_data['roles']:
-                menu = AdminMenu(self.user_data)
-                menu.menu_ejecutar_procesos()
-            elif seleccion == '9' and 'administrador' in self.user_data['roles']:
-                menu = AdminMenu(self.user_data)
-                menu.gestion_usuarios()
             elif seleccion == '10' and 'administrador' in self.user_data['roles']:
                 menu = AdminMenu(self.user_data)
-                menu.ver_sesiones_activas()
+                menu.menu_ejecutar_procesos()
             elif seleccion == '11' and 'administrador' in self.user_data['roles']:
+                menu = AdminMenu(self.user_data)
+                menu.gestion_usuarios()
+            elif seleccion == '12' and 'administrador' in self.user_data['roles']:
+                menu = AdminMenu(self.user_data)
+                menu.ver_sesiones_activas()
+            elif seleccion == '13' and 'administrador' in self.user_data['roles']:
                 menu = AdminMenu(self.user_data)
                 menu.reportes_sistema()
             elif seleccion == '99':

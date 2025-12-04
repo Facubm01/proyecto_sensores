@@ -5,6 +5,9 @@ Gestiona solicitudes de procesos por parte de usuarios
 
 from services.proceso_service import ProcesoService
 from utils.menu import *
+from utils.exportador import exportar_resultado_proceso
+from utils.visualizacion import grafico_temperatura, grafico_barras_horizontal, grafico_comparativo
+from utils.validaciones import validar_fecha, validar_rango_fechas, validar_numero_positivo, validar_id
 from colorama import Fore
 
 
@@ -56,7 +59,7 @@ class ProcesoMenu:
             
             # Mostrar detalles de un proceso
             if confirmar("¿Desea ver detalles de un proceso?"):
-                proceso_id = solicitar_entrada("ID del proceso", int)
+                proceso_id = solicitar_entrada("ID del proceso", validador=lambda x: validar_id(x, "ID del proceso"))
                 if proceso_id:
                     proceso = next((p for p in procesos if p['id'] == proceso_id), None)
                     if proceso:
@@ -64,6 +67,8 @@ class ProcesoMenu:
                         print(f"Tipo: {proceso['tipo']}")
                         print(f"Costo: ${proceso['costo']:.2f}")
                         print(f"Descripción: {proceso['descripcion']}\n")
+                    else:
+                        mostrar_error("Proceso no encontrado")
         
         pausar()
     
@@ -84,13 +89,13 @@ class ProcesoMenu:
         filas = [[p['id'], p['nombre'], f"${p['costo']:.2f}"] for p in procesos]
         mostrar_tabla(headers, filas)
         
-        proceso_id = solicitar_entrada("ID del proceso a solicitar", int)
+        proceso_id = solicitar_entrada("ID del proceso a solicitar", validador=lambda x: validar_id(x, "ID del proceso"))
         if not proceso_id:
             return
         
         proceso = next((p for p in procesos if p['id'] == proceso_id), None)
         if not proceso:
-            mostrar_error("Proceso no válido")
+            mostrar_error("Proceso no válido. El ID no existe en la lista de procesos disponibles")
             pausar()
             return
         
@@ -175,14 +180,53 @@ class ProcesoMenu:
                 pausar()
                 return
             
-            # Fechas
-            parametros['fecha_inicio'] = solicitar_entrada("\nFecha inicio (YYYY-MM-DD)", str)
-            parametros['fecha_fin'] = solicitar_entrada("Fecha fin (YYYY-MM-DD)", str)
+            # Fechas con validación
+            while True:
+                fecha_inicio_str = solicitar_entrada("\nFecha inicio (YYYY-MM-DD)", str)
+                es_valida, mensaje, fecha_inicio_dt = validar_fecha(fecha_inicio_str)
+                if not es_valida:
+                    mostrar_error(mensaje)
+                    continue
+                parametros['fecha_inicio'] = fecha_inicio_str
+                break
+            
+            while True:
+                fecha_fin_str = solicitar_entrada("Fecha fin (YYYY-MM-DD)", str)
+                es_valida, mensaje, fecha_fin_dt = validar_fecha(fecha_fin_str)
+                if not es_valida:
+                    mostrar_error(mensaje)
+                    continue
+                # Validar que fecha_inicio < fecha_fin
+                valido_rango, mensaje_rango = validar_rango_fechas(parametros['fecha_inicio'], fecha_fin_str)
+                if not valido_rango:
+                    mostrar_error(mensaje_rango)
+                    continue
+                parametros['fecha_fin'] = fecha_fin_str
+                break
             
             # Parámetros adicionales para alertas
             if 'alerta' in proceso['tipo']:
-                parametros['temp_min'] = solicitar_entrada("Temperatura mínima (°C)", float)
-                parametros['temp_max'] = solicitar_entrada("Temperatura máxima (°C)", float)
+                while True:
+                    temp_min_str = solicitar_entrada("Temperatura mínima (°C)", str)
+                    es_valida, mensaje, temp_min = validar_numero_positivo(temp_min_str, float, min_valor=-100, max_valor=100)
+                    if not es_valida:
+                        mostrar_error(mensaje)
+                        continue
+                    parametros['temp_min'] = temp_min
+                    break
+                
+                while True:
+                    temp_max_str = solicitar_entrada("Temperatura máxima (°C)", str)
+                    es_valida, mensaje, temp_max = validar_numero_positivo(temp_max_str, float, min_valor=-100, max_valor=100)
+                    if not es_valida:
+                        mostrar_error(mensaje)
+                        continue
+                    # Validar que temp_min < temp_max
+                    if temp_max <= parametros['temp_min']:
+                        mostrar_error("La temperatura máxima debe ser mayor que la temperatura mínima")
+                        continue
+                    parametros['temp_max'] = temp_max
+                    break
                 
         elif 'consulta' in proceso['tipo']:
             # Para consultas online, mostrar zonas
@@ -293,7 +337,7 @@ class ProcesoMenu:
             # Permitir ver detalle de solicitudes completadas
             if filtro_estado == 'completado' or any(s['estado'] == 'completado' for s in solicitudes):
                 if confirmar("\n¿Desea ver el detalle de alguna solicitud?"):
-                    solicitud_id = solicitar_entrada("ID de la solicitud", int)
+                    solicitud_id = solicitar_entrada("ID de la solicitud", validador=lambda x: validar_id(x, "ID de la solicitud"))
                     if solicitud_id:
                         self.ver_detalle_solicitud(solicitud_id, solicitudes)
                         return  # No pausar aquí, pausar después del detalle
@@ -413,6 +457,59 @@ class ProcesoMenu:
         elif solicitud['estado'] == 'en_proceso':
             print(f"\n{Fore.BLUE}⚙️  La solicitud se está procesando actualmente{Fore.RESET}")
         
+        # Opciones adicionales para solicitudes completadas
+        if solicitud['estado'] == 'completado' and 'resultado' in solicitud:
+            print(f"\n{Fore.YELLOW}{'='*60}{Fore.RESET}")
+            opciones_extra = [
+                (1, "Exportar resultado (JSON)"),
+                (2, "Exportar resultado (CSV)"),
+                (3, "Visualizar gráfico (si aplica)"),
+                (0, "Volver"),
+            ]
+            
+            seleccion_extra = mostrar_menu("Opciones Adicionales", opciones_extra)
+            
+            if seleccion_extra == '1':
+                ruta = exportar_resultado_proceso(solicitud['resultado'], solicitud_id, 'json')
+                if ruta:
+                    mostrar_exito(f"Resultado exportado a: {ruta}")
+                pausar()
+            elif seleccion_extra == '2':
+                ruta = exportar_resultado_proceso(solicitud['resultado'], solicitud_id, 'csv')
+                if ruta:
+                    mostrar_exito(f"Resultado exportado a: {ruta}")
+                pausar()
+            elif seleccion_extra == '3':
+                self.visualizar_resultado(solicitud['resultado'])
+        else:
+            pausar()
+    
+    def visualizar_resultado(self, resultado):
+        """Visualiza el resultado con gráficos"""
+        limpiar_pantalla()
+        mostrar_titulo("VISUALIZACIÓN DE RESULTADO")
+        
+        # Gráfico de temperaturas si hay datos mensuales
+        if 'datos_mensuales' in resultado and resultado['datos_mensuales']:
+            datos_grafico = []
+            for dato in resultado['datos_mensuales']:
+                datos_grafico.append({
+                    'fecha': dato.get('periodo', ''),
+                    'temperatura': dato.get('temperatura_promedio', 0)
+                })
+            
+            if datos_grafico:
+                grafico_temperatura(datos_grafico)
+        
+        # Gráfico comparativo temperatura/humedad
+        if 'temperatura_promedio' in resultado and 'humedad_promedio' in resultado:
+            datos_comparativo = [{
+                'etiqueta': 'Promedios',
+                'temperatura': resultado.get('temperatura_promedio', 0),
+                'humedad': resultado.get('humedad_promedio', 0)
+            }]
+            grafico_comparativo(datos_comparativo, 'temperatura', 'humedad', "Comparación Temperatura/Humedad")
+        
         pausar()
     
     def cancelar_solicitud(self):
@@ -420,7 +517,7 @@ class ProcesoMenu:
         limpiar_pantalla()
         mostrar_subtitulo("CANCELAR SOLICITUD")
         
-        solicitud_id = solicitar_entrada("ID de la solicitud a cancelar", int)
+        solicitud_id = solicitar_entrada("ID de la solicitud a cancelar", validador=lambda x: validar_id(x, "ID de la solicitud"))
         if not solicitud_id:
             return
         

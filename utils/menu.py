@@ -40,7 +40,7 @@ def mostrar_advertencia(mensaje):
     """Muestra una advertencia"""
     print(f"{Fore.YELLOW}⚠ {mensaje}")
 
-def solicitar_entrada(mensaje, tipo=str, opciones=None):
+def solicitar_entrada(mensaje, tipo=str, opciones=None, validador=None, permitir_vacio=False):
     """
     Solicita entrada del usuario con validación
     
@@ -48,6 +48,9 @@ def solicitar_entrada(mensaje, tipo=str, opciones=None):
         mensaje: Mensaje a mostrar
         tipo: Tipo de dato esperado (str, int, float)
         opciones: Lista de opciones válidas (si aplica)
+        validador: Función validadora que retorna (es_valido, mensaje_error, valor_convertido)
+                   o (es_valido, mensaje_error) si no convierte el valor
+        permitir_vacio: Si True, permite valores vacíos
     
     Returns:
         Valor ingresado por el usuario (validado)
@@ -56,6 +59,35 @@ def solicitar_entrada(mensaje, tipo=str, opciones=None):
         try:
             valor = input(f"{Fore.CYAN}{mensaje}: {Style.RESET_ALL}")
             
+            # Permitir vacío si está habilitado
+            if permitir_vacio and not valor.strip():
+                return None if tipo == str else None
+            
+            # Validar no vacío si no se permite
+            if not permitir_vacio and not valor.strip():
+                mostrar_error("Este campo es obligatorio")
+                continue
+            
+            # Aplicar validador personalizado si existe
+            if validador:
+                if callable(validador):
+                    resultado = validador(valor)
+                    if len(resultado) == 2:
+                        es_valido, mensaje_error = resultado
+                        if not es_valido:
+                            mostrar_error(mensaje_error)
+                            continue
+                        # Si el validador no retorna valor convertido, usar el original
+                        valor_convertido = valor.strip() if tipo == str else valor
+                    elif len(resultado) == 3:
+                        es_valido, mensaje_error, valor_convertido = resultado
+                        if not es_valido:
+                            mostrar_error(mensaje_error)
+                            continue
+                        return valor_convertido
+                continue
+            
+            # Conversión de tipo estándar
             if tipo == str:
                 valor_convertido = valor.strip()
             elif tipo == int:
